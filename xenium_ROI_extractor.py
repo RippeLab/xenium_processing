@@ -73,10 +73,13 @@ if __name__ == "__main__":
     os.makedirs(ouptut_folder, exist_ok = True)
     
     for r in ROIs:
-        roi_string = "X_" + str(r[0]) +  "_Y_" + str(r[0]) +  "_W_" + str(r[2]) +  "_H_"+ str(r[2])
+        roi_string = "X_" + str(r[0]) +  "_Y_" + str(r[1]) +  "_W_" + str(r[2]) +  "_H_"+ str(r[3])
         print(f"Processing: {roi_string}")
         
         sub_transcripts = transcripts.loc[(transcripts['x_location_px'] >= r[0]) & (transcripts['x_location_px'] <= (r[0] + r[2])) & (transcripts['y_location_px'] >= r[1]) & (transcripts['y_location_px'] <= (r[1] + r[3]))]
+        sub_transcripts.loc[:, "x_location_px_ROI"] = sub_transcripts["x_location_px"] - r[0]
+        sub_transcripts.loc[:, "y_location_px_ROI"] = sub_transcripts["y_location_px"] - r[1]
+        
         sub_image = image[r[1] : r[1] + r[3], r[0] : r[0] + r[2]]
         
         # We exlude all cells not fully contained in the ROI!
@@ -85,8 +88,12 @@ if __name__ == "__main__":
             
         sub_cell_boundaries = pd.merge(cell_boundaries, filter_df["cell_id"], on = "cell_id", how = "inner")
         sub_cell_boundaries = sub_cell_boundaries.drop('out', axis=1)
+        sub_cell_boundaries["vertex_x_px_ROI"] = sub_cell_boundaries["vertex_x_px"] - r[0]
+        sub_cell_boundaries["vertex_y_px_ROI"] = sub_cell_boundaries["vertex_y_px"] - r[1]
+        
         sub_cells = pd.merge(cells, filter_df["cell_id"], on = "cell_id", how = "inner")
-            
+        sub_cells["x_centroid_px_ROI"] = sub_cells["x_centroid_px"] - r[0]
+        sub_cells["y_centroid_px_ROI"] = sub_cells["y_centroid_px"] - r[1]    
         
         print(f"Writing {roi_string}")
         subfolder= os.path.join(ouptut_folder, roi_string)
