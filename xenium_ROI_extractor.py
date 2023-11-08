@@ -1,10 +1,12 @@
 import pandas as pd
+import numpy as np
 import json
 import os
 import re
 import tiffile
 import argparse
 import h5py
+import skimage
 
 def get_arguments():	
     """
@@ -93,17 +95,26 @@ if __name__ == "__main__":
         
         sub_cells = pd.merge(cells, filter_df["cell_id"], on = "cell_id", how = "inner")
         sub_cells["x_centroid_px_ROI"] = sub_cells["x_centroid_px"] - r[0]
-        sub_cells["y_centroid_px_ROI"] = sub_cells["y_centroid_px"] - r[1]    
+        sub_cells["y_centroid_px_ROI"] = sub_cells["y_centroid_px"] - r[1]
+        
+        # Make a cell mask for the ROI by getting the coordinates of every pixel inside each cell and then drawing them on ask of the size of the ROI
+        # The cells are numbered in the same order as they appear in the cell_boundaries.parquet file
+        cell_coords = sub_cell_boundaries.groupby("cell_id").apply(lambda x: skimage.draw.polygon(x["vertex_x_px_ROI"], x["vertex_y_px_ROI"], (r[2], r[3])))
+        cell_mask = np.zeros((r[3], r[2])) 
+        for n, i in enumerate(cell_coords):
+            cell_mask[i[1], i[0]] = n
         
         print(f"Writing {roi_string}")
         subfolder= os.path.join(ouptut_folder, roi_string)
         os.makedirs(subfolder, exist_ok = True)
         
-        tiffile.imwrite(os.path.join(subfolder, roi_string + "-morphology_mip.ome.tif"),data = sub_image, ome = True)
+        tiffile.imwrite(os.path.join(subfolder, roi_string + "-morphology_mip.ome.tif"), data = sub_image, ome = True, compression = "lzw")
         sub_transcripts.to_parquet(os.path.join(subfolder, roi_string + "-transcritps.parquet"))
         sub_transcripts.to_csv(os.path.join(subfolder, roi_string + "-transcritps.csv"))
         sub_cells.to_parquet(os.path.join(subfolder, roi_string + "-cells.parquet"))
         sub_cells.to_csv(os.path.join(subfolder, roi_string + "-cells.csv"))
         sub_cell_boundaries.to_parquet(os.path.join(subfolder, roi_string + "-cell_boundaries.parquet"))
         sub_cell_boundaries.to_csv(os.path.join(subfolder, roi_string + "-cell_boundaries.csv"))
+        tiffile.imwrite(os.path.join(subfolder, roi_string + "-xenium_cell_mask.ome.tif"), data = cell_mask, ome = True, compression = "lzw")
+        
         
