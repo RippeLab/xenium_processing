@@ -7,6 +7,8 @@ import tiffile
 import argparse
 import h5py
 import skimage
+import h5py
+import scipy
 
 def get_arguments():	
     """
@@ -28,11 +30,13 @@ if __name__ == "__main__":
     transcript_file_path = os.path.join(xenium_folder, "transcripts.parquet")
     cells_file_path = os.path.join(xenium_folder, "cells.parquet")
     cell_boundaries_file_path = os.path.join(xenium_folder, "cell_boundaries.parquet")
+    features_file_path = os.path.join(xenium_folder, "cell_feature_matrix.h5")
     mip_tiff_file_path = os.path.join(xenium_folder, "morphology_mip.ome.tif")
     print(f"Xenium file: {xenium_file_path}")
     print(f"Transcript file: {transcript_file_path}")
     print(f"Cell file: {cells_file_path}")
     print(f"Cell Boundary file: {cell_boundaries_file_path}")
+    print(f"Feature Matrix file: {features_file_path}")
     print(f"Maximum Projection Image File: {mip_tiff_file_path}")
     
     # Reads the pixel size in um
@@ -68,6 +72,29 @@ if __name__ == "__main__":
     ROIs = [list(int(n) for n in i) for i in ROIs]
     print(f"Found ROIs: {ROIs}")
     
+    # Read features
+    # Features are equivalent to: transcripts.loc[(transcripts["qv"] > 20) & (transcripts["cell_id"] != "UNASSIGNED")]
+    print(f"Processing features: {features_file_path}")
+    with h5py.File(features_file_path, "r") as f:
+        feature_attrs = dict(f.attrs.items())
+        feature_h5 = {}
+        feature_h5['barcodes'] = f["matrix"].get("barcodes")[:]
+        feature_h5['data'] = f["matrix"].get("data")[:]
+        feature_h5['indices'] = f["matrix"].get("indices")[:]
+        feature_h5['indptr'] = f["matrix"].get("indptr")[:]
+        feature_h5['shape'] = f["matrix"].get("shape")[:]
+        feature_h5['features'] = {}
+        feature_h5['features']["_all_tag_keys"] = f["matrix"].get("features").get("_all_tag_keys")[:]
+        feature_h5['features']["feature_type"] = f["matrix"].get("features").get("feature_type")[:]
+        feature_h5['features']["genome"] = f["matrix"].get("features").get("genome")[:]
+        feature_h5['features']["id"] = f["matrix"].get("features").get("id")[:]
+        feature_h5['features']["name"] = f["matrix"].get("features").get("name")[:]
+    features = scipy.sparse.csr_matrix((feature_h5["data"], feature_h5["indices"], feature_h5["indptr"]), dtype=int)
+    features = pd.DataFrame(features.toarray(), columns = feature_h5['features']["name"])
+    features.columns = features.columns.astype(str)
+    features["cell_id"] = cells["cell_id"]
+    features = features[list(features.columns)[-1:] + list(features.columns)[:-1]]
+
     # Read image 
     print(f"Reading Maximum Projection Image File: {mip_tiff_file_path}")
     image = tiffile.imread(mip_tiff_file_path)
@@ -100,14 +127,38 @@ if __name__ == "__main__":
         # Make a cell mask for the ROI by getting the coordinates of every pixel inside each cell and then drawing them on ask of the size of the ROI
         # The cells are numbered in the same order as they appear in the cell_boundaries.parquet file
         cell_coords = sub_cell_boundaries.groupby("cell_id").apply(lambda x: skimage.draw.polygon(x["vertex_x_px_ROI"], x["vertex_y_px_ROI"], (r[2], r[3])))
-        cell_mask = np.zeros((r[3], r[2])) 
+        cell_mask = np.zeros((r[3], r[2]), dtype=np.int32) 
         for n, i in enumerate(cell_coords):
             cell_mask[i[1], i[0]] = n
         
+        # Process features
+        sub_features = pd.merge(features, filter_df["cell_id"], on = "cell_id", how = "inner")
+        fmatrix = sub_features.drop("cell_id", axis=1)
+        fmatrix = scipy.sparse.csr_array(fmatrix)
+        
+        # Output
         print(f"Writing {roi_string}")
         subfolder= os.path.join(ouptut_folder, roi_string)
         os.makedirs(subfolder, exist_ok = True)
         
+        # Make h5 file
+        with h5py.File(os.path.join(subfolder, roi_string + "-cell_feature_matrix.h5"), "w") as f:
+            for k,v in feature_attrs.items():
+                f.attrs.create(k, v)
+            m_to_w = f.create_group("matrix")
+            m_to_w.create_dataset("barcodes", data=np.array(sub_features["cell_id"]))
+            m_to_w.create_dataset("data", data=fmatrix.data)
+            m_to_w.create_dataset("indices", data=fmatrix.indices)
+            m_to_w.create_dataset("indptr", data=fmatrix.indptr)
+            m_to_w.create_dataset("shape", data=fmatrix.shape)
+            f_to_write = m_to_w.create_group("features")
+            f_to_write.create_dataset("_all_tag_keys", data=feature_h5["features"]["_all_tag_keys"])
+            f_to_write.create_dataset("feature_type", data=feature_h5["features"]["feature_type"])
+            f_to_write.create_dataset("genome", data=feature_h5["features"]["genome"])
+            f_to_write.create_dataset("id", data=feature_h5["features"]["id"]) 
+            f_to_write.create_dataset("name", data=feature_h5["features"]["name"])
+        
+        # Write other output
         tiffile.imwrite(os.path.join(subfolder, roi_string + "-morphology_mip.ome.tif"), data = sub_image, ome = True, compression = "lzw")
         sub_transcripts.to_parquet(os.path.join(subfolder, roi_string + "-transcritps.parquet"))
         sub_transcripts.to_csv(os.path.join(subfolder, roi_string + "-transcritps.csv"))
@@ -115,6 +166,6 @@ if __name__ == "__main__":
         sub_cells.to_csv(os.path.join(subfolder, roi_string + "-cells.csv"))
         sub_cell_boundaries.to_parquet(os.path.join(subfolder, roi_string + "-cell_boundaries.parquet"))
         sub_cell_boundaries.to_csv(os.path.join(subfolder, roi_string + "-cell_boundaries.csv"))
+        sub_features.to_csv(os.path.join(subfolder, roi_string + "-feature_matrix.csv"))       
         tiffile.imwrite(os.path.join(subfolder, roi_string + "-xenium_cell_mask.ome.tif"), data = cell_mask, ome = True, compression = "lzw")
-        
         
