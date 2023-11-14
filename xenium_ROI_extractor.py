@@ -3,11 +3,10 @@ import numpy as np
 import json
 import os
 import re
-import tiffile
+import tifffile
 import argparse
 import h5py
 import skimage
-import h5py
 import scipy
 
 def get_arguments():	
@@ -136,6 +135,9 @@ if __name__ == "__main__":
         fmatrix = sub_features.drop("cell_id", axis=1)
         fmatrix = scipy.sparse.csr_array(fmatrix)
         
+        # Make transcript table for reding with the Polylux viewer (Resolve Biosciences)
+        polylux_tx = sub_transcripts[["x_location_px_ROI", "y_location_px_ROI", "z_location_px", "feature_name", "qv"]]
+    
         # Output
         print(f"Writing {roi_string}")
         subfolder= os.path.join(ouptut_folder, roi_string)
@@ -162,10 +164,12 @@ if __name__ == "__main__":
         tiffile.imwrite(os.path.join(subfolder, roi_string + "-morphology_mip.ome.tif"), data = sub_image, ome = True, compression = "lzw")
         sub_transcripts.to_parquet(os.path.join(subfolder, roi_string + "-transcritps.parquet"))
         sub_transcripts.to_csv(os.path.join(subfolder, roi_string + "-transcritps.csv"))
+        polylux_tx.to_csv(os.path.join(subfolder, roi_string + "-Polylux_transcritps.tsv"), header = None, index = False, sep = "\t")
         sub_cells.to_parquet(os.path.join(subfolder, roi_string + "-cells.parquet"))
         sub_cells.to_csv(os.path.join(subfolder, roi_string + "-cells.csv"))
         sub_cell_boundaries.to_parquet(os.path.join(subfolder, roi_string + "-cell_boundaries.parquet"))
         sub_cell_boundaries.to_csv(os.path.join(subfolder, roi_string + "-cell_boundaries.csv"))
         sub_features.to_csv(os.path.join(subfolder, roi_string + "-feature_matrix.csv"))       
         tiffile.imwrite(os.path.join(subfolder, roi_string + "-xenium_cell_mask.ome.tif"), data = cell_mask, ome = True, compression = "lzw")
+        
         
