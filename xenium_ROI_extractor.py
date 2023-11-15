@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
     # Read image 
     print(f"Reading Maximum Projection Image File: {mip_tiff_file_path}")
-    image = tiffile.imread(mip_tiff_file_path)
+    image = tifffile.imread(mip_tiff_file_path)
     
     os.makedirs(ouptut_folder, exist_ok = True)
     
@@ -137,6 +137,9 @@ if __name__ == "__main__":
         
         # Make transcript table for reding with the Polylux viewer (Resolve Biosciences)
         polylux_tx = sub_transcripts[["x_location_px_ROI", "y_location_px_ROI", "z_location_px", "feature_name", "qv"]]
+        polylux_tx["x_location_px_ROI"] = polylux_tx["x_location_px_ROI"].astype(np.int32)
+        polylux_tx["y_location_px_ROI"] = polylux_tx["y_location_px_ROI"].astype(np.int32)
+        polylux_tx["z_location_px"] = polylux_tx["z_location_px"].astype(np.int32)
     
         # Output
         print(f"Writing {roi_string}")
@@ -161,15 +164,15 @@ if __name__ == "__main__":
             f_to_write.create_dataset("name", data=feature_h5["features"]["name"])
         
         # Write other output
-        tiffile.imwrite(os.path.join(subfolder, roi_string + "-morphology_mip.ome.tif"), data = sub_image, ome = True, compression = "lzw")
+        tifffile.imwrite(os.path.join(subfolder, roi_string + "-morphology_mip.ome.tif"), data = sub_image, ome = True, compression = "lzw")
         sub_transcripts.to_parquet(os.path.join(subfolder, roi_string + "-transcritps.parquet"))
         sub_transcripts.to_csv(os.path.join(subfolder, roi_string + "-transcritps.csv"))
-        polylux_tx.to_csv(os.path.join(subfolder, roi_string + "-Polylux_transcritps.tsv"), header = None, index = False, sep = "\t")
+        polylux_tx.to_csv(os.path.join(subfolder, roi_string + "-Polylux_transcritps.txt"), header = None, index = False, sep = "\t")
         sub_cells.to_parquet(os.path.join(subfolder, roi_string + "-cells.parquet"))
         sub_cells.to_csv(os.path.join(subfolder, roi_string + "-cells.csv"))
         sub_cell_boundaries.to_parquet(os.path.join(subfolder, roi_string + "-cell_boundaries.parquet"))
         sub_cell_boundaries.to_csv(os.path.join(subfolder, roi_string + "-cell_boundaries.csv"))
         sub_features.to_csv(os.path.join(subfolder, roi_string + "-feature_matrix.csv"))       
-        tiffile.imwrite(os.path.join(subfolder, roi_string + "-xenium_cell_mask.ome.tif"), data = cell_mask, ome = True, compression = "lzw")
+        tifffile.imwrite(os.path.join(subfolder, roi_string + "-xenium_cell_mask.ome.tif"), data = cell_mask, ome = True, compression = "lzw")
         
         
